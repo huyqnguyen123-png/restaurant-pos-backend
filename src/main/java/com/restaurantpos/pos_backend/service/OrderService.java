@@ -10,6 +10,7 @@ import com.restaurantpos.pos_backend.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.restaurantpos.pos_backend.repository.PaymentRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -22,6 +23,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
     private final OrderItemRepository orderItemRepository;
+    private final PaymentRepository paymentRepository;
 
     public OrderResponse createOrder(CreateOrderRequest request) {
         validateOrderRequest(request);
@@ -156,6 +158,12 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+    public void deleteOrder(Long orderId) {
+        Order order = findOrderById(orderId);
+        orderItemRepository.deleteByOrderId(order.getId());
+        paymentRepository.deleteByOrderId(order.getId());
+        orderRepository.delete(order);
+    }
     // --- helpers ---
 
     private void validateOrderRequest(CreateOrderRequest request) {
