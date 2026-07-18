@@ -25,9 +25,6 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    // GET /api/orders                                   -> all orders, newest first
-    // GET /api/orders?status=OPEN                        -> home screen (open orders)
-    // GET /api/orders?status=PAID&paymentMethod=CASH      -> history, paid-by-cash only
     @GetMapping
     public ResponseEntity<List<OrderSummaryResponse>> getOrders(
             @RequestParam(required = false) OrderStatus status,
@@ -38,6 +35,14 @@ public class OrderController {
     @GetMapping("/{id}")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id) {
         return ResponseEntity.ok(orderService.getOrder(id));
+    }
+
+    // PUT /api/orders/{id} -> rename the table number or customer name
+    @PutMapping("/{id}")
+    public ResponseEntity<OrderResponse> updateOrderInfo(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateOrderInfoRequest request) {
+        return ResponseEntity.ok(orderService.updateOrderInfo(id, request));
     }
 
     @PostMapping("/{id}/items")
@@ -62,6 +67,7 @@ public class OrderController {
         return ResponseEntity.ok(orderService.removeItem(id, itemId));
     }
 
+    // DELETE /api/orders/{id} -> permanently delete an entire order (any status)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteOrder(@PathVariable Long id) {
         orderService.deleteOrder(id);

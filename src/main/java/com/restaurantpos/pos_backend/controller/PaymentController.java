@@ -3,6 +3,7 @@ package com.restaurantpos.pos_backend.controller;
 import com.restaurantpos.pos_backend.dto.CreatePaymentRequest;
 import com.restaurantpos.pos_backend.dto.OrderResponse;
 import com.restaurantpos.pos_backend.dto.PaymentResponse;
+import com.restaurantpos.pos_backend.dto.UpdatePaymentMethodRequest;
 import com.restaurantpos.pos_backend.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,9 +20,6 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
-    // POST /api/orders/{orderId}/payments
-    // Body without orderItemIds -> pay the whole remaining balance
-    // Body with orderItemIds    -> pay only those items (split bill)
     @PostMapping
     public ResponseEntity<OrderResponse> createPayment(
             @PathVariable Long orderId,
@@ -30,9 +28,16 @@ public class PaymentController {
                 .body(paymentService.createPayment(orderId, request));
     }
 
-    // GET /api/orders/{orderId}/payments -> list individual payment transactions for this order
     @GetMapping
     public ResponseEntity<List<PaymentResponse>> getPayments(@PathVariable Long orderId) {
         return ResponseEntity.ok(paymentService.getPaymentsForOrder(orderId));
+    }
+
+    // PUT /api/orders/{orderId}/payments/method -> correct a mistaken payment method (CASH <-> CARD)
+    @PutMapping("/method")
+    public ResponseEntity<OrderResponse> updatePaymentMethod(
+            @PathVariable Long orderId,
+            @Valid @RequestBody UpdatePaymentMethodRequest request) {
+        return ResponseEntity.ok(paymentService.updatePaymentMethod(orderId, request));
     }
 }

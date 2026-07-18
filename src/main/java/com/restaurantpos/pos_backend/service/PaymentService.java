@@ -4,6 +4,7 @@ import com.restaurantpos.pos_backend.dto.CreatePaymentRequest;
 import com.restaurantpos.pos_backend.dto.OrderResponse;
 import com.restaurantpos.pos_backend.dto.PaymentItemRequest;
 import com.restaurantpos.pos_backend.dto.PaymentResponse;
+import com.restaurantpos.pos_backend.dto.UpdatePaymentMethodRequest;
 import com.restaurantpos.pos_backend.entity.Order;
 import com.restaurantpos.pos_backend.entity.OrderItem;
 import com.restaurantpos.pos_backend.entity.OrderStatus;
@@ -36,12 +37,8 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final OrderService orderService;
 
-    // Pairs an existing OrderItem with how much of its quantity this payment call covers
-    // (which may be less than the item's full current quantity).
     private record PaymentLine(OrderItem item, int quantity) {}
 
-    // How much quantity to subtract from an original row after splitting part of it
-    // off into a new, already-paid order.
     private record Reduction(Long itemId, int quantity) {}
 
     public OrderResponse createPayment(Long orderId, CreatePaymentRequest request) {
@@ -68,7 +65,27 @@ public class PaymentService {
         return splitPaymentIntoNewOrder(order, lines, request.getMethod(), amount);
     }
 
-    // --- this payment covers everything left unpaid -> no split needed, mark this order PAID ---
+    // Lets staff correct a mistaken payment method (e.g. selected Cash instead
+    // of Card) after the fact. Only meaningful for orders that have already
+    // been paid - a partial/split payment always spins off into its own
+    // separate order (see createPayment above), so a PAID order always has
+    // exactly one payment to correct here.
+    public OrderResponse updatePaymentMethod(Long orderId, UpdatePaymentMethodRequest request) {
+        if (!orderRepository.existsById(orderId)) {
+            throw new ResourceNotFoundException("Order not found with id: " + orderId);
+        }
+
+        List<Payment> payments = paymentRepository.findByOrderId(orderId);
+        if (payments.isEmpty()) {
+            throw new BadRequestException("This order has not been paid yet, so there is no payment method to change");
+        }
+
+        Payment payment = payments.get(0);
+        payment.setMethod(request.getMethod());
+        paymentRepository.save(payment);
+
+        return orderService.getOrder(orderId);
+    }
 
     private OrderResponse payWithoutSplitting(Order order, List<PaymentLine> lines, PaymentMethod method, BigDecimal amount) {
         Payment payment = new Payment();
@@ -87,8 +104,6 @@ public class PaymentService {
 
         return orderService.getOrder(order.getId());
     }
-
-    // --- true split-bill: spin the requested quantity off into its own brand-new, already-PAID order ---
 
     private OrderResponse splitPaymentIntoNewOrder(
             Order order, List<PaymentLine> lines, PaymentMethod method, BigDecimal amount) {
@@ -115,11 +130,8 @@ public class PaymentService {
             int payingQty = line.quantity();
 
             if (payingQty == item.getQuantity()) {
-                // Entire row moves over to the split order as-is.
                 fullyMovedItemIds.add(item.getId());
             } else {
-                // Partial quantity: create a new row (just the paid portion) in the split
-                // order, and shrink the original row down to what's left unpaid.
                 OrderItem paidCopy = new OrderItem();
                 paidCopy.setOrder(savedSplitOrder);
                 paidCopy.setMenuItem(item.getMenuItem());
@@ -143,15 +155,11 @@ public class PaymentService {
             orderItemRepository.reduceQuantity(r.itemId(), r.quantity());
         }
 
-        // The bulk updates above clear the persistence context, so this re-reads the
-        // original order fresh from the database, correctly reflecting the split.
         return orderService.getOrder(order.getId());
     }
 
     // --- helpers ---
 
-    // True if the given payment lines account for every currently-unpaid unit of every
-    // unpaid item in the order — i.e. nothing would be left unpaid afterward.
     private boolean coversAllUnpaidQuantity(Order order, List<PaymentLine> lines) {
         Map<Long, Integer> requestedByItemId = new HashMap<>();
         for (PaymentLine line : lines) {

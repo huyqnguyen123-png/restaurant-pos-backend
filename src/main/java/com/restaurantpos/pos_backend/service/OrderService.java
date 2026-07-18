@@ -7,10 +7,10 @@ import com.restaurantpos.pos_backend.exception.ResourceNotFoundException;
 import com.restaurantpos.pos_backend.repository.MenuItemRepository;
 import com.restaurantpos.pos_backend.repository.OrderItemRepository;
 import com.restaurantpos.pos_backend.repository.OrderRepository;
+import com.restaurantpos.pos_backend.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.restaurantpos.pos_backend.repository.PaymentRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -65,6 +65,28 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+    // Renames a table number (dine-in) or customer name (takeaway). Allowed
+    // regardless of order status (OPEN or PAID) - fixing a typo shouldn't be
+    // blocked just because the bill was already settled.
+    public OrderResponse updateOrderInfo(Long orderId, UpdateOrderInfoRequest request) {
+        Order order = findOrderById(orderId);
+
+        if (order.getOrderType() == OrderType.DINE_IN) {
+            if (request.getTableNumber() == null || request.getTableNumber() <= 0) {
+                throw new BadRequestException("tableNumber is required for dine-in orders");
+            }
+            order.setTableNumber(request.getTableNumber());
+        } else {
+            if (request.getCustomerName() == null || request.getCustomerName().isBlank()) {
+                throw new BadRequestException("customerName is required for takeaway orders");
+            }
+            order.setCustomerName(request.getCustomerName().trim());
+        }
+
+        Order saved = orderRepository.save(order);
+        return toOrderResponse(saved);
+    }
+
     public OrderResponse addItem(Long orderId, AddOrderItemRequest request) {
         Order order = findOrderById(orderId);
         ensureOrderIsOpen(order);
@@ -75,7 +97,6 @@ public class OrderService {
                 && request.getCustomPrice() != null;
 
         if (hasMenuItemId == hasCustomFields) {
-            // Both provided, or neither provided -> invalid either way.
             throw new BadRequestException(
                     "Provide either menuItemId, or both customName and customPrice (not both, not neither)");
         }
@@ -116,9 +137,6 @@ public class OrderService {
         }
     }
 
-    // Custom, one-off items are never merged with existing rows (there's no stable
-    // menu item id to match on), and menuItem stays null since the item is
-    // intentionally not part of the permanent menu.
     private void addCustomItem(Order order, AddOrderItemRequest request) {
         OrderItem newItem = new OrderItem();
         newItem.setOrder(order);
@@ -158,12 +176,16 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+    // Deletes an entire order (works for both OPEN and PAID orders). Deletion
+    // order matters: items first (they may reference a payment row), then
+    // payments (now nothing references them), then the order itself.
     public void deleteOrder(Long orderId) {
         Order order = findOrderById(orderId);
         orderItemRepository.deleteByOrderId(order.getId());
         paymentRepository.deleteByOrderId(order.getId());
         orderRepository.delete(order);
     }
+
     // --- helpers ---
 
     private void validateOrderRequest(CreateOrderRequest request) {
