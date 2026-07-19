@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -65,9 +66,6 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
-    // Renames a table number (dine-in) or customer name (takeaway). Allowed
-    // regardless of order status (OPEN or PAID) - fixing a typo shouldn't be
-    // blocked just because the bill was already settled.
     public OrderResponse updateOrderInfo(Long orderId, UpdateOrderInfoRequest request) {
         Order order = findOrderById(orderId);
 
@@ -115,10 +113,13 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Menu item not found with id: " + request.getMenuItemId()));
 
+        String normalizedNotes = normalizeNotes(request.getNotes());
+
         OrderItem existing = order.getItems().stream()
                 .filter(i -> i.getMenuItem() != null
                         && i.getMenuItem().getId().equals(menuItem.getId())
-                        && i.getPayment() == null)
+                        && i.getPayment() == null
+                        && Objects.equals(normalizeNotes(i.getNotes()), normalizedNotes))
                 .findFirst()
                 .orElse(null);
 
@@ -132,6 +133,7 @@ public class OrderService {
             newItem.setItemName(menuItem.getName());
             newItem.setUnitPrice(menuItem.getPrice());
             newItem.setQuantity(request.getQuantity());
+            newItem.setNotes(normalizedNotes);
             order.getItems().add(newItem);
             orderItemRepository.save(newItem);
         }
@@ -144,6 +146,7 @@ public class OrderService {
         newItem.setItemName(request.getCustomName().trim());
         newItem.setUnitPrice(request.getCustomPrice());
         newItem.setQuantity(request.getQuantity());
+        newItem.setNotes(normalizeNotes(request.getNotes()));
         order.getItems().add(newItem);
         orderItemRepository.save(newItem);
     }
@@ -157,6 +160,20 @@ public class OrderService {
             throw new BadRequestException("Cannot change quantity of an item that has already been paid");
         }
         item.setQuantity(request.getQuantity());
+        orderItemRepository.save(item);
+
+        return toOrderResponse(order);
+    }
+
+    public OrderResponse updateItemNotes(Long orderId, Long orderItemId, String notes) {
+        Order order = findOrderById(orderId);
+        ensureOrderIsOpen(order);
+
+        OrderItem item = findOrderItemInOrder(order, orderItemId);
+        if (item.getPayment() != null) {
+            throw new BadRequestException("Cannot change notes of an item that has already been paid");
+        }
+        item.setNotes(normalizeNotes(notes));
         orderItemRepository.save(item);
 
         return toOrderResponse(order);
@@ -176,9 +193,6 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
-    // Deletes an entire order (works for both OPEN and PAID orders). Deletion
-    // order matters: items first (they may reference a payment row), then
-    // payments (now nothing references them), then the order itself.
     public void deleteOrder(Long orderId) {
         Order order = findOrderById(orderId);
         orderItemRepository.deleteByOrderId(order.getId());
@@ -187,6 +201,13 @@ public class OrderService {
     }
 
     // --- helpers ---
+
+    private String normalizeNotes(String notes) {
+        if (notes == null || notes.isBlank()) {
+            return null;
+        }
+        return notes.trim();
+    }
 
     private void validateOrderRequest(CreateOrderRequest request) {
         if (request.getOrderType() == OrderType.DINE_IN
@@ -239,7 +260,8 @@ public class OrderService {
                 subtotal,
                 item.getPayment() != null,
                 method,
-                isCustom
+                isCustom,
+                item.getNotes()
         );
     }
 

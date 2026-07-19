@@ -37,7 +37,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.getOrder(id));
     }
 
-    // PUT /api/orders/{id} -> rename the table number or customer name
     @PutMapping("/{id}")
     public ResponseEntity<OrderResponse> updateOrderInfo(
             @PathVariable Long id,
@@ -60,6 +59,14 @@ public class OrderController {
         return ResponseEntity.ok(orderService.updateItemQuantity(id, itemId, request));
     }
 
+    @PutMapping("/{id}/items/{itemId}/notes")
+    public ResponseEntity<OrderResponse> updateItemNotes(
+            @PathVariable Long id,
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdateOrderItemNotesRequest request) {
+        return ResponseEntity.ok(orderService.updateItemNotes(id, itemId, request.getNotes()));
+    }
+
     @DeleteMapping("/{id}/items/{itemId}")
     public ResponseEntity<OrderResponse> removeItem(
             @PathVariable Long id,
@@ -67,7 +74,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.removeItem(id, itemId));
     }
 
-    // DELETE /api/orders/{id} -> permanently delete an entire order (any status)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteOrder(@PathVariable Long id) {
         orderService.deleteOrder(id);

@@ -20,7 +20,6 @@ public class OrderItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Same reasoning as Order.items above: excluded to avoid infinite recursion
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
@@ -31,8 +30,6 @@ public class OrderItem {
     @JoinColumn(name = "menu_item_id", nullable = true)
     private MenuItem menuItem;
 
-    // Snapshot of name/price at the time the order was placed — if the
-    // menu item's name/price changes later, old orders keep the historical data.
     @Column(name = "item_name", nullable = false)
     private String itemName;
 
@@ -42,8 +39,12 @@ public class OrderItem {
     @Column(nullable = false)
     private Integer quantity = 1;
 
-    // null means this item hasn't been paid for yet (not linked to any payment)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "payment_id")
     private Payment payment;
+
+    // Optional free-text note for this specific line, e.g. "no chili",
+    // "extra ice" — entered by staff when taking the order.
+    @Column(length = 255)
+    private String notes;
 }

@@ -12,12 +12,13 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class OrderItemResponse {
     private Long id;
-    private Long menuItemId; // null for custom, one-off items
+    private Long menuItemId;
     private String itemName;
     private BigDecimal unitPrice;
     private int quantity;
     private BigDecimal subtotal;
     private boolean paid;
     private PaymentMethod paymentMethod;
-    private boolean custom; // true if typed in manually rather than picked from the menu
+    private boolean custom;
+    private String notes;
 }
