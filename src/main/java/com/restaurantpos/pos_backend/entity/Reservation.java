@@ -26,7 +26,6 @@ public class Reservation {
     @Column(nullable = false)
     private String customerName;
 
-    @Column(nullable = false)
     private String email;
 
     @Column(nullable = false)

@@ -12,7 +12,6 @@ public class CreateReservationRequest {
     @NotBlank(message = "customerName must not be empty")
     private String customerName;
 
-    @NotBlank(message = "email must not be empty")
     private String email;
 
     @NotBlank(message = "phone must not be empty")
