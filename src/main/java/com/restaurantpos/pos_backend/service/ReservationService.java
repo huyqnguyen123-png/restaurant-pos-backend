@@ -8,6 +8,7 @@ import com.restaurantpos.pos_backend.entity.ReservationStatus;
 import com.restaurantpos.pos_backend.exception.ResourceNotFoundException;
 import com.restaurantpos.pos_backend.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,9 +17,10 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class ReservationService {
-
     private final ReservationRepository reservationRepository;
+    private final PushNotificationService pushNotificationService;
 
     public ReservationResponse create(CreateReservationRequest request) {
         Reservation reservation = new Reservation();
@@ -29,8 +31,19 @@ public class ReservationService {
         reservation.setReservationTime(request.getReservationTime());
         reservation.setPartySize(request.getPartySize());
         reservation.setNotes(request.getNotes());
-
         Reservation saved = reservationRepository.save(reservation);
+
+        // Never let a notification failure roll back the reservation itself.
+        try {
+            pushNotificationService.sendToAllDevices(
+                    "New Reservation",
+                    saved.getCustomerName() + " — " + saved.getPartySize() + " guests on "
+                            + saved.getReservationDate() + " at " + saved.getReservationTime()
+            );
+        } catch (Exception e) {
+            log.warn("Failed to send push notification for reservation {}: {}", saved.getId(), e.getMessage());
+        }
+
         return toResponse(saved);
     }
 

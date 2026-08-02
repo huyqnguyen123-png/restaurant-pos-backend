@@ -9,6 +9,7 @@ import com.restaurantpos.pos_backend.repository.OrderItemRepository;
 import com.restaurantpos.pos_backend.repository.OrderRepository;
 import com.restaurantpos.pos_backend.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,12 +20,14 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class OrderService {
 
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
     private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
+    private final PushNotificationService pushNotificationService;
 
     public OrderResponse createOrder(CreateOrderRequest request) {
         validateOrderRequest(request);
@@ -40,6 +43,18 @@ public class OrderService {
         }
 
         Order saved = orderRepository.save(order);
+
+        if (saved.getOrderType() == OrderType.TAKEAWAY) {
+            try {
+                pushNotificationService.sendToAllDevices(
+                        "New Pickup Order",
+                        "Order #" + saved.getId() + " from " + saved.getCustomerName()
+                );
+            } catch (Exception e) {
+                log.warn("Failed to send push notification for order {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+
         return toOrderResponse(saved);
     }
 
