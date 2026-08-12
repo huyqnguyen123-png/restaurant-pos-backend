@@ -6,6 +6,6 @@ import lombok.Data;
 // (tableNumber for DINE_IN, customerName for TAKEAWAY).
 @Data
 public class UpdateOrderInfoRequest {
-    private Integer tableNumber;
+    private Double tableNumber;
     private String customerName;
 }

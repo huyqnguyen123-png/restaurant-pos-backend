@@ -10,17 +10,17 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-// Full order detail, shown when the user taps an order card on the home screen
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrderResponse {
     private Long id;
     private OrderType orderType;
-    private Integer tableNumber;
+    private Double tableNumber;
     private String customerName;
     private OrderStatus status;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
     private BigDecimal totalAmount;
+    private List<OrderLineResponse> timeline;
 }

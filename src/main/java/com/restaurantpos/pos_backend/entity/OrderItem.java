@@ -43,8 +43,9 @@ public class OrderItem {
     @JoinColumn(name = "payment_id")
     private Payment payment;
 
-    // Optional free-text note for this specific line, e.g. "no chili",
-    // "extra ice" — entered by staff when taking the order.
     @Column(length = 255)
     private String notes;
+
+    @Column(name = "position")
+    private Integer position;
 }

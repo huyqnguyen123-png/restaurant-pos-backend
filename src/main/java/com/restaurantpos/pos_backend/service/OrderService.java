@@ -5,6 +5,7 @@ import com.restaurantpos.pos_backend.entity.*;
 import com.restaurantpos.pos_backend.exception.BadRequestException;
 import com.restaurantpos.pos_backend.exception.ResourceNotFoundException;
 import com.restaurantpos.pos_backend.repository.MenuItemRepository;
+import com.restaurantpos.pos_backend.repository.OrderDividerRepository;
 import com.restaurantpos.pos_backend.repository.OrderItemRepository;
 import com.restaurantpos.pos_backend.repository.OrderRepository;
 import com.restaurantpos.pos_backend.repository.PaymentRepository;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -26,6 +29,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
     private final OrderItemRepository orderItemRepository;
+    private final OrderDividerRepository orderDividerRepository;
     private final PaymentRepository paymentRepository;
     private final PushNotificationService pushNotificationService;
 
@@ -123,35 +127,27 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+    // Always creates a brand-new line, never merges into an existing one —
+    // even if the same menu item was just added. This lets staff add a
+    // divider between identical items ordered by different people, and
+    // keeps each person's order visually distinct. Duplicate lines are
+    // merged back together only when printing the receipt (ReceiptModal),
+    // never in the working order itself.
     private void addExistingMenuItem(Order order, AddOrderItemRequest request) {
         MenuItem menuItem = menuItemRepository.findById(request.getMenuItemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Menu item not found with id: " + request.getMenuItemId()));
 
-        String normalizedNotes = normalizeNotes(request.getNotes());
-
-        OrderItem existing = order.getItems().stream()
-                .filter(i -> i.getMenuItem() != null
-                        && i.getMenuItem().getId().equals(menuItem.getId())
-                        && i.getPayment() == null
-                        && Objects.equals(normalizeNotes(i.getNotes()), normalizedNotes))
-                .findFirst()
-                .orElse(null);
-
-        if (existing != null) {
-            existing.setQuantity(existing.getQuantity() + request.getQuantity());
-            orderItemRepository.save(existing);
-        } else {
-            OrderItem newItem = new OrderItem();
-            newItem.setOrder(order);
-            newItem.setMenuItem(menuItem);
-            newItem.setItemName(menuItem.getName());
-            newItem.setUnitPrice(menuItem.getPrice());
-            newItem.setQuantity(request.getQuantity());
-            newItem.setNotes(normalizedNotes);
-            order.getItems().add(newItem);
-            orderItemRepository.save(newItem);
-        }
+        OrderItem newItem = new OrderItem();
+        newItem.setOrder(order);
+        newItem.setMenuItem(menuItem);
+        newItem.setItemName(menuItem.getName());
+        newItem.setUnitPrice(menuItem.getPrice());
+        newItem.setQuantity(request.getQuantity());
+        newItem.setNotes(normalizeNotes(request.getNotes()));
+        newItem.setPosition(nextPosition(order));
+        order.getItems().add(newItem);
+        orderItemRepository.save(newItem);
     }
 
     private void addCustomItem(Order order, AddOrderItemRequest request) {
@@ -162,6 +158,7 @@ public class OrderService {
         newItem.setUnitPrice(request.getCustomPrice());
         newItem.setQuantity(request.getQuantity());
         newItem.setNotes(normalizeNotes(request.getNotes()));
+        newItem.setPosition(nextPosition(order));
         order.getItems().add(newItem);
         orderItemRepository.save(newItem);
     }
@@ -208,8 +205,41 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+    // Appends a divider at the end of the current timeline — matches the
+    // natural workflow of "person 1 finishes ordering, tap divider, person
+    // 2 starts ordering" since new items are always appended at the end too.
+    public OrderResponse addDivider(Long orderId) {
+        Order order = findOrderById(orderId);
+        ensureOrderIsOpen(order);
+
+        OrderDivider divider = new OrderDivider();
+        divider.setOrder(order);
+        divider.setPosition(nextPosition(order));
+        order.getDividers().add(divider);
+        orderDividerRepository.save(divider);
+
+        return toOrderResponse(order);
+    }
+
+    public OrderResponse removeDivider(Long orderId, Long dividerId) {
+        Order order = findOrderById(orderId);
+        ensureOrderIsOpen(order);
+
+        OrderDivider divider = order.getDividers().stream()
+                .filter(d -> d.getId().equals(dividerId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Divider not found with id: " + dividerId + " in order " + order.getId()));
+
+        order.getDividers().remove(divider);
+        orderDividerRepository.delete(divider);
+
+        return toOrderResponse(order);
+    }
+
     public void deleteOrder(Long orderId) {
         Order order = findOrderById(orderId);
+        orderDividerRepository.deleteByOrderId(order.getId());
         orderItemRepository.deleteByOrderId(order.getId());
         paymentRepository.deleteByOrderId(order.getId());
         orderRepository.delete(order);
@@ -222,6 +252,23 @@ public class OrderService {
             return null;
         }
         return notes.trim();
+    }
+
+    // Next slot in the shared item/divider position sequence for this
+    // order — always one past whatever is currently the highest position,
+    // so new items and dividers are always appended at the very end.
+    private int nextPosition(Order order) {
+        int maxItemPos = order.getItems().stream()
+                .map(OrderItem::getPosition)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(-1);
+        int maxDividerPos = order.getDividers().stream()
+                .mapToInt(OrderDivider::getPosition)
+                .max()
+                .orElse(-1);
+        return Math.max(maxItemPos, maxDividerPos) + 1;
     }
 
     private void validateOrderRequest(CreateOrderRequest request) {
@@ -280,6 +327,33 @@ public class OrderService {
         );
     }
 
+    // Merges items and dividers into a single ordered list for display.
+    // Items created before this feature shipped have no position yet — they
+    // fall back to a very low sort key so they keep appearing in their
+    // original (id) order, ahead of anything added after the update.
+    private List<OrderLineResponse> buildTimeline(Order order) {
+        record Entry(int sortKey, long tieBreakId, OrderLineResponse response) {
+        }
+
+        List<Entry> entries = new ArrayList<>();
+
+        for (OrderItem item : order.getItems()) {
+            int sortKey = item.getPosition() != null ? item.getPosition() : -1_000_000;
+            entries.add(new Entry(sortKey, item.getId(),
+                    new OrderLineResponse("ITEM", toItemResponse(item), null)));
+        }
+
+        for (OrderDivider divider : order.getDividers()) {
+            entries.add(new Entry(divider.getPosition(), divider.getId(),
+                    new OrderLineResponse("DIVIDER", null, divider.getId())));
+        }
+
+        return entries.stream()
+                .sorted(Comparator.comparingInt(Entry::sortKey).thenComparingLong(Entry::tieBreakId))
+                .map(Entry::response)
+                .toList();
+    }
+
     private OrderResponse toOrderResponse(Order order) {
         List<OrderItemResponse> items = order.getItems().stream()
                 .map(this::toItemResponse)
@@ -293,7 +367,8 @@ public class OrderService {
                 order.getStatus(),
                 order.getCreatedAt(),
                 items,
-                calculateTotal(order)
+                calculateTotal(order),
+                buildTimeline(order)
         );
     }
 

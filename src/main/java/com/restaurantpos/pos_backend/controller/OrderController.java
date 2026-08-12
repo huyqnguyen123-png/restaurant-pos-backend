@@ -79,4 +79,16 @@ public class OrderController {
         orderService.deleteOrder(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/dividers")
+    public ResponseEntity<OrderResponse> addDivider(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.addDivider(id));
+    }
+
+    @DeleteMapping("/{id}/dividers/{dividerId}")
+    public ResponseEntity<OrderResponse> removeDivider(
+            @PathVariable Long id,
+            @PathVariable Long dividerId) {
+        return ResponseEntity.ok(orderService.removeDivider(id, dividerId));
+    }
 }

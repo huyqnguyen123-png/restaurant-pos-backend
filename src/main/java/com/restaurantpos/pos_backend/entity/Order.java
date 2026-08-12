@@ -11,8 +11,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-// Note: table is named "orders" (plural) because "order" is a reserved
-// SQL keyword (used in ORDER BY) and would cause errors as a table name.
 @Entity
 @Table(name = "orders")
 @Data
@@ -29,10 +27,10 @@ public class Order {
     private OrderType orderType;
 
     @Column(name = "table_number")
-    private Integer tableNumber; // only set when orderType = DINE_IN
+    private Double tableNumber;
 
     @Column(name = "customer_name")
-    private String customerName; // only set when orderType = TAKEAWAY
+    private String customerName;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -41,12 +39,15 @@ public class Order {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    // IMPORTANT: excluded from toString()/equals()/hashCode() to avoid
-    // infinite recursion (Order holds List<OrderItem>, OrderItem holds Order back)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
+
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderDivider> dividers = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {

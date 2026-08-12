@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 public class OrderSummaryResponse {
     private Long id;
     private OrderType orderType;
-    private Integer tableNumber;
+    private Double tableNumber;
     private String customerName;
     private OrderStatus status;
     private BigDecimal totalAmount;

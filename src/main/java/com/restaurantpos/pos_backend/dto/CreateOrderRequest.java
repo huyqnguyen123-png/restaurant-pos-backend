@@ -11,7 +11,7 @@ public class CreateOrderRequest {
     private OrderType orderType; // DINE_IN or TAKEAWAY
 
     // Required when orderType = DINE_IN, ignored otherwise
-    private Integer tableNumber;
+    private Double tableNumber;
 
     // Required when orderType = TAKEAWAY, ignored otherwise
     private String customerName;
